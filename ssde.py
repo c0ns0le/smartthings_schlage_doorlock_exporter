@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 
-"""
-checkInterval status(value=3600, unit='s', data={'protocol': 'zwave', 'hubHardwareId': '0020', 'offlinePingable': '1', 'deviceScheme': 'TRACKED'})
-healthStatus status(value=None, unit=None, data={})
-DeviceWatch-Enroll status(value=None, unit=None, data=None)
-DeviceWatch-DeviceStatus status(value=None, unit=None, data={})
-lock status(value='unlocked', unit=None, data=None)
-battery status(value=47, unit='%', data=None)
-codeLength status(value=4, unit=None, data=None)
-maxCodes status(value=30, unit=None, data=None)
-maxCodeLength status(value=None, unit=None, data=None)
-codeChanged status(value='8 unset', unit=None, data=None)
-minCodeLength status(value=None, unit=None, data=None)
-codeReport status(value=[3], unit=None, data=None)
-scanCodes status(value='Complete', unit=None, data=None)
-lockCodes status(value='{"1":"Code 1","2":"Code 2","3":"Code 3"}', unit=None, data=None)
-"""
-
+import argparse
 import asyncio
 import aiohttp
 import logging
@@ -28,8 +12,6 @@ from typing import Optional
 import pysmartthings
 
 
-API_TOKEN = environ["SMARTTHINGS_API_TOKEN"]
-LOCK_DEVICE_ID = environ["SMARTTINGS_DEVICE_ID"]
 LOG = logging.getLogger(__name__)
 
 
@@ -40,7 +22,8 @@ class SmartthingsSchlageDoorLock:
         "locked": 1.0,
     }
 
-    def __init__(self, device_id: str) -> None:
+    def __init__(self, api_token: str, device_id: str) -> None:
+        self.api_token = api_token
         self.device_id = device_id
         self.stats = defaultdict(float)
 
@@ -48,7 +31,7 @@ class SmartthingsSchlageDoorLock:
         lock_device: Optional[pysmartthings.device.DeviceEntity] = None
 
         async with aiohttp.ClientSession() as session:
-            api = pysmartthings.SmartThings(session, API_TOKEN)
+            api = pysmartthings.SmartThings(session, self.api_token)
             devices = await api.devices()
 
             for device in devices:
@@ -78,8 +61,31 @@ class SmartthingsSchlageDoorLock:
         return True
 
 
+def args_setup() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-a",
+        "--api-token",
+        default=environ.get("SMARTTHINGS_API_TOKEN", ""),
+        help="Smartthing API token",
+    )
+    parser.add_argument(
+        "-d", "--debug", action="store_true", help="Verbose debug output"
+    )
+    parser.add_argument(
+        "-D",
+        "--device-id",
+        default=environ.get("SMARTTINGS_DEVICE_ID", ""),
+        help="Smartthing API Device ID",
+    )
+    return parser
+
+
 def main() -> int:
-    lock = SmartthingsSchlageDoorLock(LOCK_DEVICE_ID)
+    parser = args_setup()
+    args = parser.parse_args()
+
+    lock = SmartthingsSchlageDoorLock(args.api_token, args.device_id)
     asyncio.run(lock.get_lock_stats())
     print(lock.stats)
     return 0
