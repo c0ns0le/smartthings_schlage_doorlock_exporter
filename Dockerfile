@@ -1,4 +1,4 @@
-FROM python:3
+FROM python:3-slim
 
 RUN mkdir /src
 ADD CHANGES.md README.md setup.py requirements.txt ssde.py /src/
