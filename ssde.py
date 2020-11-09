@@ -40,10 +40,11 @@ class SmartthingsSchlageDoorLock:
         "locked": 1.0,
     }
 
-    def __init__(self, device_id: str = "") -> None:
+    def __init__(self, device_id: str) -> None:
+        self.device_id = device_id
         self.stats = defaultdict(float)
 
-    async def get_lock_stats(self, device_id: str) -> bool:
+    async def get_lock_stats(self) -> bool:
         lock_device: Optional[pysmartthings.device.DeviceEntity] = None
 
         async with aiohttp.ClientSession() as session:
@@ -51,7 +52,7 @@ class SmartthingsSchlageDoorLock:
             devices = await api.devices()
 
             for device in devices:
-                if device.device_id != device_id:
+                if device.device_id != self.device_id:
                     continue
 
                 await device.status.refresh()
@@ -78,8 +79,8 @@ class SmartthingsSchlageDoorLock:
 
 
 def main() -> int:
-    lock = SmartthingsSchlageDoorLock()
-    asyncio.run(lock.get_lock_stats(LOCK_DEVICE_ID))
+    lock = SmartthingsSchlageDoorLock(LOCK_DEVICE_ID)
+    asyncio.run(lock.get_lock_stats())
     print(lock.stats)
     return 0
 
