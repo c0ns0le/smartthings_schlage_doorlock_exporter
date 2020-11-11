@@ -5,11 +5,14 @@ import asyncio
 import aiohttp
 import logging
 import sys
+import time
 from collections import defaultdict
 from os import environ
-from typing import Optional
+from typing import Dict, Generator, List, Optional
 
 import pysmartthings
+from prometheus_client.core import GaugeMetricFamily, REGISTRY
+from prometheus_client import start_http_server
 
 
 LOG = logging.getLogger(__name__)
@@ -25,10 +28,10 @@ class SmartthingsSchlageDoorLock:
     def __init__(self, api_token: str, device_id: str) -> None:
         self.api_token = api_token
         self.device_id = device_id
-        self.stats = defaultdict(float)
 
-    async def get_lock_stats(self) -> bool:
+    async def get_lock_stats(self) -> Dict[str, float]:
         lock_device: Optional[pysmartthings.device.DeviceEntity] = None
+        stats: Dict[str, float] = defaultdict(float)
 
         async with aiohttp.ClientSession() as session:
             api = pysmartthings.SmartThings(session, self.api_token)
@@ -43,22 +46,73 @@ class SmartthingsSchlageDoorLock:
                 break
 
         if not lock_device:
-            LOG.error(f"Unable to find Lock Device {LOCK_DEVICE_ID}")
-            return False
+            LOG.error(f"Unable to find Lock Device {self.device_id}")
+            return {}
 
         for name, status in lock_device.status.attributes.items():
             if name not in self.ATTRIBUTE_SELECT_LIST:
                 continue
 
             if name == "lock":
-                self.stats[name] = self.LockStatus[status.value]
+                stats[name] = self.LockStatus[status.value]
             elif name == "lockCodes":
                 codes = eval(status.value)
-                self.stats[name] = float(len(codes))
+                stats[name] = float(len(codes))
             else:
-                self.stats[name] = float(status.value)
+                stats[name] = float(status.value)
 
-        return True
+        return stats
+
+
+class PrometheusCollector:
+    """Prometheus Collector class to get SmartLock status and convert to
+    Guages via HTTP server."""
+
+    labels: List[str] = ["device_name"]
+
+    help_test = {
+        "battery": "Battery Level %",
+        "codeLength": "Length of codes",
+        "lock": "Is door locked? (boolean)",
+        "lockCodes": "Number of lock codes set",
+        "maxCodes": "Max number of codes lock can handle",
+    }
+
+    def __init__(
+        self,
+        device_name: str,
+        lock: SmartthingsSchlageDoorLock,
+        key_prefix="schlagedoorlock",
+    ) -> None:
+        self.device_name = device_name
+        self.lock = lock
+        self.key_prefix = key_prefix
+
+    def _handle_counter(self, category: str, value: float) -> GaugeMetricFamily:
+        normalized_category = category.replace(" ", "_")
+        key = f"{self.key_prefix}_{normalized_category}"
+        g = GaugeMetricFamily(
+            key,
+            self.help_test.get(normalized_category, "Schlage Metric"),
+            labels=self.labels,
+        )
+        g.add_metric([self.key_prefix], value)
+        return g
+
+    def collect(self) -> Generator[GaugeMetricFamily, None, None]:
+        start_time = time.time()
+        LOG.info("Collection started")
+
+        stats = asyncio.run(self.lock.get_lock_stats())
+        if not stats:
+            LOG.error("Problem with collecting lock stats")
+            return
+
+        for category, value in stats.items():
+            yield self._handle_counter(category, value)
+
+        run_time = time.time() - start_time
+        LOG.info(f"Collection finished in {run_time}s")
 
 
 def args_setup() -> argparse.ArgumentParser:
@@ -78,17 +132,65 @@ def args_setup() -> argparse.ArgumentParser:
         default=environ.get("SMARTTINGS_DEVICE_ID", ""),
         help="Smartthing API Device ID",
     )
+    parser.add_argument(
+        "-n",
+        "--device-name",
+        default=environ.get("SMARTTINGS_DEVICE_NAME", ""),
+        help="Smartthing API Device Name used for guage label",
+    )
+    parser.add_argument(
+        "-p",
+        "--port",
+        default=1338,
+        type=int,
+        help="Prometheus Exporter TCP Port",
+    )
+    parser.add_argument(
+        "-P",
+        "--print",
+        action="store_true",
+        help="Print stats rather than run HTTP Server",
+    )
     return parser
+
+
+def serve(args: argparse.Namespace, lock: SmartthingsSchlageDoorLock) -> int:
+    start_http_server(args.port)
+    REGISTRY.register(PrometheusCollector(args.device_name, lock))
+    LOG.info(f"Smartthings Schlege Door Lock Exporter - listening on {args.port}")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        LOG.info("Shutting down ...")
+    return 0
+
+
+def _handle_debug(debug: bool) -> bool:
+    """Turn on debugging if asked otherwise INFO default"""
+    log_level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        format="[%(asctime)s] %(levelname)s: %(message)s (%(filename)s:%(lineno)d)",
+        level=log_level,
+    )
+    return debug
 
 
 def main() -> int:
     parser = args_setup()
     args = parser.parse_args()
+    _handle_debug(args.debug)
+
+    if not args.api_token or not args.device_id or not args.device_name:
+        LOG.error("Please specify an API Token, Device ID + Device Name")
+        return 1
 
     lock = SmartthingsSchlageDoorLock(args.api_token, args.device_id)
-    asyncio.run(lock.get_lock_stats())
-    print(lock.stats)
-    return 0
+    if args.print:
+        print(asyncio.run(lock.get_lock_stats()))
+        return 0
+
+    return serve(args, lock)
 
 
 if __name__ == "__main__":

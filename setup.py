@@ -29,8 +29,10 @@ def get_long_desc() -> str:
 
 setup(
     name=ptr_params["entry_point_module"],
-    version="20.11.9",
-    description="Schlage Door Lock Prometheus Exporters via Samsung Smartthings API",
+    version="20.11.10",
+    description=(
+        "Schlage Door Lock Prometheus Exporters via Samsung Smartthings API"
+    ),
     long_description=get_long_desc(),
     long_description_content_type="text/markdown",
     py_modules=["ssde"],
@@ -47,7 +49,7 @@ setup(
         "Programming Language :: Python :: 3.9",
     ],
     python_requires=">=3.8",
-    install_requires=["pysmartthings"],
+    install_requires=["prometheus_client", "pysmartthings"],
     entry_points={"console_scripts": ["ssde = ssde:main"]},
     test_suite=ptr_params["test_suite"],
 )
