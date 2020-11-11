@@ -1,2 +1,2 @@
 prometheus_client==0.8.0
-pysmartthings==0.7.4
+pysmartthings==0.7.5
