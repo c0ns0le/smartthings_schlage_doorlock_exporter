@@ -29,7 +29,7 @@ def get_long_desc() -> str:
 
 setup(
     name=ptr_params["entry_point_module"],
-    version="20.11.10",
+    version="21.1.2",
     description=(
         "Schlage Door Lock Prometheus Exporters via Samsung Smartthings API"
     ),
