@@ -20,11 +20,17 @@ async def get_devices(api_token: str) -> Sequence[Any]:
 
 
 def main() -> int:
+    logging.basicConfig(
+        format="[%(asctime)s] %(levelname)s: %(message)s (%(filename)s:%(lineno)d)",
+        level=logging.DEBUG,
+    )
     loop = asyncio.get_event_loop()
     LOG.info("Lets try get devices and print them")
     devices = loop.run_until_complete(get_devices(API_TOKEN))
     for device in devices:
-        print(device)
+        # print(vars(device))
+        # print(dir(device))
+        print(f"{device._name}: {device._device_id}")
 
 
 if __name__ == "__main__":
